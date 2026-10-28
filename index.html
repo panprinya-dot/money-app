@@ -1,0 +1,13 @@
+<!doctype html><html lang="th"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,maximum-scale=1">
+<meta name="theme-color" content="#6C8CFF"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="การเงิน">
+<link rel="manifest" href="manifest.webmanifest"><link rel="apple-touch-icon" href="icons/icon-180.png"><link rel="icon" href="icons/icon-192.png">
+<title>บันทึกการเงิน</title><link rel="stylesheet" href="app.css"></head><body>
+<main id="view"></main>
+<button class="fab" id="fab" aria-label="เพิ่มรายจ่าย">+</button>
+<nav class="tab" id="tab">
+<button data-v="home"><i>🏠</i>หน้าหลัก</button><button data-v="income"><i>💰</i>รายรับ</button><button data-v="loans"><i>🏦</i>เงินกู้</button><button data-v="settings"><i>⚙️</i>ตั้งค่า</button></nav>
+<div id="sheet" class="sheet hide"><div class="sheet-bg"></div><div class="sheet-body" id="sheetBody"></div></div>
+<div id="lock" class="lock hide"></div><div id="toast" class="toast hide"></div>
+<script src="app.js"></script></body></html>
