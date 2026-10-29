@@ -2,7 +2,7 @@
 const KEY='moneyapp.v1';
 const CATS=[['food','อาหาร','🍜','#FF8A65','#FFF0E8'],['travel','เดินทาง','🚇','#4DB6AC','#E6F7F5'],['home','ที่พัก','🏠','#6C8CFF','#EAF0FF'],['util','ค่าน้ำไฟ','💡','#FFC94D','#FFF8E1'],['shop','ช้อปปิ้ง','🛍️','#B39DDB','#F3EEFF'],['other','อื่นๆ','📦','#90A4AE','#EEF1F5']];
 const CAT=Object.fromEntries(CATS.map(c=>[c[0],c]));
-let S=load();let view='home';
+let S=load();let view='home';let loanId=null;
 function load(){try{const d=JSON.parse(localStorage.getItem(KEY));if(d&&d.tx)return norm(d)}catch(e){}return{tx:[],loans:[],pin:null}}
 function norm(d){return{tx:Array.isArray(d.tx)?d.tx:[],loans:Array.isArray(d.loans)?d.loans:[],pin:d.pin||null}}
 function save(){localStorage.setItem(KEY,JSON.stringify(S))}
@@ -16,56 +16,66 @@ const thMonth=iso=>new Date(iso+'T12:00:00+07:00').toLocaleDateString('th-TH-u-c
 const ym=()=>today().slice(0,7);
 const paid=l=>l.payments.reduce((a,p)=>a+p.amount,0);
 function toast(m){const t=$('#toast');t.textContent=m;t.classList.remove('hide');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.add('hide'),1800)}
-function txRow(t){const inc=t.type==='inc';const c=inc?['','รายรับ','💼','','#E7F8EF']:(CAT[t.cat]||CAT.other);
- return `<div class="row"><div class="ic" style="background:${c[4]}">${c[2]}</div><div class="f1"><b>${esc(t.note||c[1])}</b><span>${c[1]} · ${thDate(t.date)}</span></div><div class="${inc?'pos':'neg'}">${inc?'+':'-'}${baht(t.amount)}</div><button class="x" data-del="${t.id}" aria-label="ลบ">✕</button></div>`}
+function txRow(t,ro){const inc=t.type==='inc';const c=inc?['','รายรับ','💼','','#E7F8EF']:(CAT[t.cat]||CAT.other);
+ return `<div class="row"><div class="ic" style="background:${c[4]}">${c[2]}</div><div class="f1"><b>${esc(t.note||c[1])}</b><span>${c[1]} · ${thDate(t.date)}</span></div><div class="${inc?'pos':'neg'}">${inc?'+':'-'}${baht(t.amount)}</div>${ro?'':`<button class="x" data-edit="${t.id}" aria-label="แก้ไข">✏️</button><button class="x" data-del="${t.id}" aria-label="ลบ">✕</button>`}</div>`}
 function sorted(a){return [...a].sort((x,y)=>y.date.localeCompare(x.date)||(y.ts||0)-(x.ts||0))}
 function render(){document.querySelectorAll('.tab button').forEach(b=>b.classList.toggle('on',b.dataset.v===view));
- $('#fab').classList.toggle('hide',view!=='home');$('#view').innerHTML=V[view]();window.scrollTo(0,0)}
+ if(view!=='loans')loanId=null;$('#fab').classList.toggle('hide',view!=='exp');$('#view').innerHTML=V[view]();window.scrollTo(0,0)}
 const V={
-home(){const m=ym();const tm=S.tx.filter(t=>t.date.startsWith(m));
- const inc=tm.filter(t=>t.type==='inc').reduce((a,t)=>a+t.amount,0),exp=tm.filter(t=>t.type==='exp').reduce((a,t)=>a+t.amount,0);
- const lp=S.loans.flatMap(l=>l.payments).filter(p=>p.date.startsWith(m)).reduce((a,p)=>a+p.amount,0);
+home(){const m=ym();const sum=(a,ty)=>a.filter(t=>t.type===ty).reduce((x,t)=>x+t.amount,0);const tm=S.tx.filter(t=>t.date.startsWith(m));
+ const inc=sum(tm,'inc'),exp=sum(tm,'exp'),tInc=sum(S.tx,'inc'),tExp=sum(S.tx,'exp');
+ const pays=S.loans.flatMap(l=>l.payments),lp=pays.filter(p=>p.date.startsWith(m)).reduce((a,p)=>a+p.amount,0),tLp=pays.reduce((a,p)=>a+p.amount,0);
+ const owe=S.loans.reduce((a,l)=>a+Math.max(0,l.principal-paid(l)),0);
  const by={};tm.filter(t=>t.type==='exp').forEach(t=>by[t.cat]=(by[t.cat]||0)+t.amount);
  let acc=0;const seg=CATS.filter(c=>by[c[0]]).map(c=>{const s=acc;acc+=by[c[0]]/exp*100;return `${c[3]} ${s}% ${acc}%`});
- const pie=exp?`<div style="display:flex;gap:16px;align-items:center"><div style="width:96px;height:96px;flex:none;border-radius:50%;background:conic-gradient(${seg.join(',')});display:flex;align-items:center;justify-content:center"><div style="width:56px;height:56px;border-radius:50%;background:#fff"></div></div><div style="font-size:13px;line-height:1.7">${CATS.filter(c=>by[c[0]]).map(c=>`<div><span style="color:${c[3]}">●</span> ${c[1]} ${Math.round(by[c[0]]/exp*100)}% · ${baht(by[c[0]])}</div>`).join('')}</div></div>`:'<div class="empty">ยังไม่มีรายจ่ายเดือนนี้ — กด + เพื่อเพิ่ม</div>';
- const rec=sorted(S.tx).slice(0,8);
- return `<div class="hd"><p>สวัสดี 👋 · ${thMonth(today())}</p><h1>ภาพรวมเดือนนี้</h1></div>
- <div class="card hero"><small>คงเหลือเดือนนี้</small><div class="big" id="balance">${baht(inc-exp-lp)}</div><div class="g3"><div>รายรับ<b>${baht(inc)}</b></div><div>รายจ่าย<b>${baht(exp)}</b></div><div>ผ่อนเงินกู้<b>${baht(lp)}</b></div></div></div>
- <div class="card"><div class="ttl">รายจ่ายตามหมวด</div>${pie}</div>
- <div class="card"><div class="ttl">รายการล่าสุด</div>${rec.length?rec.map(txRow).join(''):'<div class="empty">ยังไม่มีรายการ</div>'}</div>`},
+ const pie=exp?`<div style="display:flex;gap:16px;align-items:center"><div style="width:96px;height:96px;flex:none;border-radius:50%;background:conic-gradient(${seg.join(',')});display:flex;align-items:center;justify-content:center"><div style="width:56px;height:56px;border-radius:50%;background:#fff"></div></div><div style="font-size:13px;line-height:1.7">${CATS.filter(c=>by[c[0]]).map(c=>`<div><span style="color:${c[3]}">●</span> ${c[1]} ${Math.round(by[c[0]]/exp*100)}% · ${baht(by[c[0]])}</div>`).join('')}</div></div>`:'<div class="empty">ยังไม่มีรายจ่ายเดือนนี้</div>';
+ const rec=sorted(S.tx).slice(0,5);
+ return `<div class="hd"><p>สวัสดี 👋 · ${thMonth(today())}</p><h1>ภาพรวมทั้งหมด</h1></div>
+ <div class="card hero"><small>คงเหลือรวมทั้งหมด</small><div class="big" id="total">${baht(tInc-tExp-tLp)}</div><div class="g3"><div>รายรับรวม<b id="tInc">${baht(tInc)}</b></div><div>รายจ่ายรวม<b id="tExp">${baht(tExp)}</b></div><div>หนี้คงเหลือ<b id="tOwe">${baht(owe)}</b></div></div></div>
+ <div class="card"><div class="ttl">เดือนนี้</div><div class="g3 mo"><div>รายรับ<b>${baht(inc)}</b></div><div>รายจ่าย<b>${baht(exp)}</b></div><div>ผ่อนเงินกู้<b>${baht(lp)}</b></div></div><div style="margin-top:8px">คงเหลือเดือนนี้ <b id="balance">${baht(inc-exp-lp)}</b></div></div>
+ <div class="card"><div class="ttl">รายจ่ายตามหมวด (เดือนนี้)</div>${pie}</div>
+ <div class="card"><div class="ttl">รายการล่าสุด</div>${rec.length?rec.map(t=>txRow(t,1)).join(''):'<div class="empty">ยังไม่มีรายการ</div>'}</div>`},
+exp(){const l=sorted(S.tx.filter(t=>t.type==='exp'));const m=ym();const sm=l.filter(t=>t.date.startsWith(m)).reduce((a,t)=>a+t.amount,0);const all=l.reduce((a,t)=>a+t.amount,0);
+ const g={};l.forEach(t=>(g[t.date]=g[t.date]||[]).push(t));
+ return `<div class="hd"><p>${thMonth(today())}</p><h1>รายจ่าย</h1></div><div class="card hero"><small>รายจ่ายเดือนนี้</small><div class="big" id="expMonth">${baht(sm)}</div><small>รวมทั้งหมด ${baht(all)} · ${l.length} รายการ</small></div>
+ <div class="card"><button class="btn" data-act="addExp">+ เพิ่มรายจ่าย</button></div>
+ ${l.length?Object.keys(g).map(d=>`<div class="card"><div class="ttl">${thDate(d)}<span class="chip">${baht(g[d].reduce((a,t)=>a+t.amount,0))}</span></div>${g[d].map(t=>txRow(t)).join('')}</div>`).join(''):'<div class="card"><div class="empty">ยังไม่มีรายจ่าย — กด + เพื่อเพิ่ม</div></div>'}`},
 income(){const l=sorted(S.tx.filter(t=>t.type==='inc'));const m=ym();const sm=l.filter(t=>t.date.startsWith(m)).reduce((a,t)=>a+t.amount,0);const all=l.reduce((a,t)=>a+t.amount,0);
  return `<div class="hd"><p>${thMonth(today())}</p><h1>รายรับ</h1></div><div class="card hero green"><small>รายรับเดือนนี้</small><div class="big">${baht(sm)}</div><small>รวมทั้งหมด ${baht(all)}</small></div>
  <div class="card"><button class="btn" data-act="addInc">+ เพิ่มรายรับ / เงินเดือน</button></div>
  <div class="card"><div class="ttl">ประวัติรายรับ</div>${l.length?l.map(txRow).join(''):'<div class="empty">ยังไม่มีรายรับ</div>'}</div>`},
-loans(){const rem=S.loans.reduce((a,l)=>a+Math.max(0,l.principal-paid(l)),0);
+loans(){const L=S.loans.find(x=>x.id===loanId);if(L)return loanDetail(L);loanId=null;const rem=S.loans.reduce((a,l)=>a+Math.max(0,l.principal-paid(l)),0);
  return `<div class="hd"><p>ติดตามหนี้และการผ่อน</p><h1>เงินกู้</h1></div><div class="card hero"><small>ยอดคงเหลือทั้งหมด</small><div class="big">${baht(rem)}</div><small>${S.loans.length} รายการ</small></div>
  <div class="card"><button class="btn" data-act="addLoan">+ เพิ่มเงินกู้</button></div>
- ${S.loans.length?S.loans.map(l=>{const p=paid(l),r=Math.max(0,l.principal-p),pc=Math.min(100,p/l.principal*100);
- return `<div class="card loan"><div class="ttl">${esc(l.name)} ${r<=0?'<span class="chip">ปิดแล้ว ✓</span>':`<span class="chip">ผ่อน ${baht(l.monthly||0)}/ด.</span>`}</div>
- <div class="bar"><i style="width:${pc}%"></i></div><div style="display:flex;justify-content:space-between;font-size:13px;color:#7A86A1"><span>จ่ายแล้ว ${baht(p)} (${Math.round(pc)}%)</span><span>จาก ${baht(l.principal)}</span></div>
- <div style="margin-top:6px">คงเหลือ <b class="neg remain">${baht(r)}</b></div>
- ${l.payments.length?`<div style="margin-top:6px">${[...l.payments].sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="row" style="padding:5px 0"><div class="f1"><span>ชำระ ${thDate(x.date)}</span></div><div class="pos">${baht(x.amount)}</div><button class="x" data-delpay="${l.id}:${x.id}">✕</button></div>`).join('')}</div>`:''}
- <div style="display:flex;gap:8px"><button class="btn sm" data-pay="${l.id}">บันทึกการชำระ</button><button class="btn sm danger" style="width:auto;padding:9px 14px" data-delloan="${l.id}">ลบ</button></div></div>`}).join(''):'<div class="card"><div class="empty">ยังไม่มีเงินกู้</div></div>'}`},
+ <div class="card">${S.loans.length?S.loans.map(l=>{const r=Math.max(0,l.principal-paid(l));
+ return `<button class="row loanItem" data-open="${l.id}" style="width:100%;text-align:left"><div class="ic" style="background:#EAF0FF">🏦</div><div class="f1"><b>${esc(l.name)}</b><span>${r<=0?'ปิดแล้ว ✓':'คงเหลือ'}</span></div><div class="neg remain">${baht(r)}</div><span style="color:#B0B8CC;font-size:20px">›</span></button>`}).join(''):'<div class="empty">ยังไม่มีเงินกู้</div>'}</div>`},
 settings(){return `<div class="hd"><p>ข้อมูลเก็บในเครื่องนี้เท่านั้น (ออฟไลน์)</p><h1>ตั้งค่า</h1></div>
  <div class="card"><div class="ttl">สำรองข้อมูล</div><button class="btn sec" data-act="expJson">⬇️ ส่งออก JSON (สำรองทั้งหมด)</button><button class="btn sec" data-act="expCsv">⬇️ ส่งออก CSV (เปิดใน Excel)</button><button class="btn sec" data-act="imp">⬆️ นำเข้า JSON</button><input type="file" id="impFile" accept=".json,application/json" class="hide"></div>
  <div class="card"><div class="ttl">รหัส PIN</div><div style="font-size:14px;color:#7A86A1">${S.pin?'เปิดใช้งานอยู่ — ต้องใส่ PIN ทุกครั้งที่เปิดแอป':'ยังไม่ได้ตั้ง PIN'}</div>${S.pin?'<button class="btn sec" data-act="pinOff">ปิด PIN</button>':'<button class="btn sec" data-act="pinOn">ตั้ง PIN 4 หลัก</button>'}</div>
  <div class="card"><div class="ttl">สถิติ</div><div style="font-size:14px">รายการรายรับ/รายจ่าย ${S.tx.length} · เงินกู้ ${S.loans.length}</div></div>
  <div class="card"><div class="ttl">ลบข้อมูล</div><button class="btn danger" id="delAll" data-act="delAll">🗑️ ลบข้อมูลทั้งหมด</button></div>
- <p style="text-align:center;color:#9AA3B8;font-size:12px;margin:8px 0">บันทึกการเงิน v1.0</p>`}};
+ <p style="text-align:center;color:#9AA3B8;font-size:12px;margin:8px 0">บันทึกการเงิน v2.0</p>`}};
+function loanDetail(l){const p=paid(l),r=Math.max(0,l.principal-p),pc=Math.min(100,p/l.principal*100);
+ return `<div class="hd"><button class="back" data-back style="color:#6C8CFF;font-size:15px;padding:4px 0">‹ กลับ</button><h1 id="loanTitle">${esc(l.name)}</h1></div>
+ <div class="card hero"><small>คงเหลือ</small><div class="big remain">${baht(r)}</div><div class="g3"><div>ยอดกู้<b>${baht(l.principal)}</b></div><div>จ่ายแล้ว<b>${baht(p)}</b></div><div>ผ่อน/เดือน<b>${baht(l.monthly||0)}</b></div></div></div>
+ <div class="card loan"><div class="bar"><i style="width:${pc}%"></i></div><div style="font-size:13px;color:#7A86A1">จ่ายแล้ว ${Math.round(pc)}% ${r<=0?'<span class="chip">ปิดแล้ว ✓</span>':''}</div>
+ <button class="btn" data-pay="${l.id}">+ บันทึกการชำระ</button>
+ <div style="display:flex;gap:8px"><button class="btn sm sec" data-editloan="${l.id}">✏️ แก้ไข</button><button class="btn sm danger" data-delloan="${l.id}">ลบ</button></div></div>
+ <div class="card"><div class="ttl">ประวัติการชำระ</div>${l.payments.length?[...l.payments].sort((a,b)=>b.date.localeCompare(a.date)).map(x=>`<div class="row"><div class="f1"><span>ชำระ ${thDate(x.date)}</span></div><div class="pos">${baht(x.amount)}</div><button class="x" data-delpay="${l.id}:${x.id}">✕</button></div>`).join(''):'<div class="empty">ยังไม่มีการชำระ</div>'}</div>`}
 function sheet(h){$('#sheetBody').innerHTML=h;$('#sheet').classList.remove('hide')}
 function close(){$('#sheet').classList.add('hide')}
-function keypadSheet(o){let a='',cat='food';
+function keypadSheet(o){const e0=o.edit;let a=e0?String(e0.amount):'',cat=e0&&e0.cat||'food';
  const draw=()=>{$('#amt').textContent='฿'+(a||'0')};
- sheet(`<div class="ttl">${o.title}<button data-close>ปิด</button></div><div class="amt" id="amt">฿0</div>
+ sheet(`<div class="ttl">${e0?'แก้ไขรายการ':o.title}<button data-close>ปิด</button></div><div class="amt" id="amt">฿0</div>
  ${o.cats?`<div class="cats">${CATS.map(c=>`<button data-cat="${c[0]}" class="${c[0]===cat?'sel':''}"><i>${c[2]}</i>${c[1]}</button>`).join('')}</div>`:''}
- <label>บันทึก</label><input id="note" placeholder="${o.ph}" maxlength="60"><label>วันที่</label><input id="date" type="date" value="${today()}">
- <div class="keys">${['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div><button class="btn" id="saveTx">บันทึก</button>`);
+ <label>บันทึก</label><input id="note" placeholder="${o.ph}" maxlength="60" value="${esc(e0?e0.note:'')}"><label>วันที่</label><input id="date" type="date" value="${e0?e0.date:today()}">
+ <div class="keys">${['1','2','3','4','5','6','7','8','9','.','0','⌫'].map(k=>`<button data-k="${k}">${k}</button>`).join('')}</div><button class="btn" id="saveTx">บันทึก</button>`);draw();
  $('#sheetBody').onclick=e=>{const b=e.target.closest('button');if(!b)return;
   if(b.dataset.cat){cat=b.dataset.cat;document.querySelectorAll('.cats button').forEach(x=>x.classList.toggle('sel',x===b))}
   if(b.dataset.k){const k=b.dataset.k;if(k==='⌫')a=a.slice(0,-1);else if(k==='.'){if(!a.includes('.'))a=(a||'0')+'.'}else if(!/\.\d\d$/.test(a)&&a.length<10)a=a==='0'?k:a+k;draw()}
   if(b.dataset.close!==undefined)close();
   if(b.id==='saveTx'){const n=parseFloat(a);if(!(n>0))return toast('กรุณาใส่จำนวนเงิน');
-   S.tx.push({id:uid(),type:o.type,amount:n,cat:o.cats?cat:null,note:$('#note').value.trim(),date:$('#date').value||today(),ts:Date.now()});save();close();render();toast('บันทึกแล้ว ✓')}}}
+   const v={amount:n,cat:o.cats?cat:null,note:$('#note').value.trim(),date:$('#date').value||today()};if(e0)Object.assign(e0,v);else S.tx.push({id:uid(),type:o.type,...v,ts:Date.now()});save();close();render();toast('บันทึกแล้ว ✓')}}}
 function formSheet(title,fields,onSave){sheet(`<div class="ttl">${title}<button data-close>ปิด</button></div>${fields.map(f=>`<label>${f[1]}</label><input id="f_${f[0]}" type="${f[2]}" ${f[2]==='number'?'inputmode="decimal" step="any" min="0"':''} value="${f[3]||''}" placeholder="${f[4]||''}">`).join('')}<button class="btn" id="saveF">บันทึก</button>`);
  $('#sheetBody').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.dataset.close!==undefined)close();
   if(b.id==='saveF'){const v={};fields.forEach(f=>v[f[0]]=$('#f_'+f[0]).value.trim());if(onSave(v)!==false){save();close();render();toast('บันทึกแล้ว ✓')}}}}
@@ -80,11 +90,15 @@ function pinPad(title,cb){const L=$('#lock');let p='';const draw=()=>{L.innerHTM
  draw();L.classList.remove('hide');L.onclick=async e=>{const b=e.target.closest('button');if(!b)return;const k=b.dataset.k;if(k==='⌫')p=p.slice(0,-1);else if(p.length<4)p+=k;draw();if(p.length===4){const r=await cb(p);if(r){L.classList.add('hide');L.onclick=null}else{p='';draw();toast('PIN ไม่ถูกต้อง')}}}}
 document.addEventListener('click',async e=>{const b=e.target.closest('button');if(!b||b.closest('#sheet')||b.closest('#lock'))return;const d=b.dataset;
  if(d.v){view=d.v;render();return}
- if(b.id==='fab')return keypadSheet({title:'เพิ่มรายจ่าย',type:'exp',cats:true,ph:'เช่น ข้าวมันไก่'});
+ if(d.open){loanId=d.open;render();return}
+ if(d.back!==undefined){loanId=null;render();return}
+ if(d.edit){const t=S.tx.find(x=>x.id===d.edit);if(!t)return;const inc=t.type==='inc';return keypadSheet({title:'',type:t.type,cats:!inc,ph:'',edit:t})}
+ if(d.editloan){const l=S.loans.find(x=>x.id===d.editloan);return formSheet('แก้ไขเงินกู้',[['name','ชื่อเงินกู้','text',esc(l.name)],['principal','ยอดเงินกู้ทั้งหมด (บาท)','number',l.principal],['monthly','ผ่อนต่อเดือน (บาท)','number',l.monthly||'']],v=>{const pr=parseFloat(v.principal);if(!v.name||!(pr>0)){toast('กรุณาใส่ชื่อและยอดเงินกู้');return false}l.name=v.name;l.principal=pr;l.monthly=parseFloat(v.monthly)||0})}
+ if(b.id==='fab'||d.act==='addExp')return keypadSheet({title:'เพิ่มรายจ่าย',type:'exp',cats:true,ph:'เช่น ข้าวมันไก่'});
  if(d.del){if(confirm('ลบรายการนี้?')){S.tx=S.tx.filter(t=>t.id!==d.del);save();render()}return}
  if(d.pay){const l=S.loans.find(x=>x.id===d.pay);return formSheet('บันทึกการชำระ · '+esc(l.name),[['amt','จำนวนเงิน (บาท)','number',l.monthly||''],['date','วันที่','date',today()]],v=>{const n=parseFloat(v.amt);if(!(n>0)){toast('กรุณาใส่จำนวนเงิน');return false}l.payments.push({id:uid(),amount:n,date:v.date||today()})})}
  if(d.delpay){const[li,pi]=d.delpay.split(':');const l=S.loans.find(x=>x.id===li);if(confirm('ลบการชำระนี้?')){l.payments=l.payments.filter(p=>p.id!==pi);save();render()}return}
- if(d.delloan){if(confirm('ลบเงินกู้นี้และประวัติการชำระ?')){S.loans=S.loans.filter(l=>l.id!==d.delloan);save();render()}return}
+ if(d.delloan){if(confirm('ลบเงินกู้นี้และประวัติการชำระ?')){S.loans=S.loans.filter(l=>l.id!==d.delloan);loanId=null;save();render()}return}
  switch(d.act){
  case 'addInc':return keypadSheet({title:'เพิ่มรายรับ',type:'inc',cats:false,ph:'เช่น เงินเดือน'});
  case 'addLoan':return formSheet('เพิ่มเงินกู้',[['name','ชื่อเงินกู้','text','','เช่น สินเชื่อรถยนต์'],['principal','ยอดเงินกู้ทั้งหมด (บาท)','number'],['monthly','ผ่อนต่อเดือน (บาท)','number']],v=>{const pr=parseFloat(v.principal);if(!v.name||!(pr>0)){toast('กรุณาใส่ชื่อและยอดเงินกู้');return false}S.loans.push({id:uid(),name:v.name,principal:pr,monthly:parseFloat(v.monthly)||0,payments:[],created:today()})});
